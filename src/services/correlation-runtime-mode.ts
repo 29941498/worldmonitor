@@ -1,4 +1,5 @@
 import { toApiUrl } from '@/services/runtime';
+import { publicApiCredentials } from '@/services/public-api-credentials';
 import {
   CORRELATION_RUNTIME_MODE_ENDPOINT,
   resolveCorrelationRuntimeMode,
@@ -33,10 +34,11 @@ export async function fetchCorrelationRuntimeMode(
   fetchImpl: RuntimeModeFetch = (...args) => globalThis.fetch(...args),
 ): Promise<CorrelationRuntimeMode> {
   try {
-    const response = await fetchImpl(toApiUrl(CORRELATION_RUNTIME_MODE_ENDPOINT), {
+    const requestUrl = toApiUrl(CORRELATION_RUNTIME_MODE_ENDPOINT);
+    const response = await fetchImpl(requestUrl, {
       method: 'GET',
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: publicApiCredentials(requestUrl),
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(CONTROL_PLANE_TIMEOUT_MS),
     });

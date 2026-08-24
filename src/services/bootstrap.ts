@@ -1,4 +1,5 @@
 import { getPersistentCache, setPersistentCache } from '@/services/persistent-cache';
+import { publicApiCredentials } from '@/services/public-api-credentials';
 import { isDesktopRuntime, toApiUrl } from '@/services/runtime';
 import {
   buildBootstrapTransferRumSample,
@@ -176,10 +177,11 @@ export async function ensureHydrated(key: string): Promise<unknown | undefined> 
 
   const promise = (async () => {
     try {
-      const resp = await fetch(
-        toApiUrl(`/api/bootstrap?keys=${encodeURIComponent(key)}&public=1`),
-        { credentials: 'omit', signal: AbortSignal.timeout(10_000) },
-      );
+      const requestUrl = toApiUrl(`/api/bootstrap?keys=${encodeURIComponent(key)}&public=1`);
+      const resp = await fetch(requestUrl, {
+        credentials: publicApiCredentials(requestUrl),
+        signal: AbortSignal.timeout(10_000),
+      });
       if (!resp.ok) return undefined;
       const payload = (await resp.json()) as { data?: Record<string, unknown> };
       return payload.data?.[key];
@@ -324,7 +326,10 @@ async function fetchTier(
     // public=1 gives the shared seed bundle a cache key distinct from the legacy
     // credentialed tier URL. credentials:'omit' also avoids sending cookies to
     // a route whose contract is explicitly public (see #5249).
-    const resp = await fetch(requestUrl, { signal, credentials: 'omit' });
+    const resp = await fetch(requestUrl, {
+      signal,
+      credentials: publicApiCredentials(requestUrl),
+    });
     if (!resp.ok) {
       failedOutcome = 'http-error';
     } else {
