@@ -13,6 +13,8 @@ const dockerIgnorePath = new URL('../.dockerignore', import.meta.url);
 const validatorPath = new URL('../deploy/self-hosted/scripts/validate-env.sh', import.meta.url);
 const envExamplePath = new URL('../deploy/self-hosted/.env.production.example', import.meta.url);
 const deployScriptPath = new URL('../deploy/self-hosted/scripts/deploy.sh', import.meta.url);
+const authEntrypointPath = new URL('../deploy/self-hosted/scripts/auth-proxy-entrypoint.sh', import.meta.url);
+const authDockerfilePath = new URL('../deploy/self-hosted/Dockerfile.auth-proxy', import.meta.url);
 const appDockerfilePath = new URL('../Dockerfile', import.meta.url);
 
 test('production compose exposes only the loopback health port', async () => {
@@ -63,6 +65,7 @@ test('environment validator rejects public placeholders and accepts strong relea
     'REDIS_PASSWORD=replace-with-openssl-rand-hex-32',
     'REDIS_TOKEN=replace-with-openssl-rand-hex-32',
     'WM_SESSION_SECRET=replace-with-openssl-rand-hex-32',
+    'WM_AUTH_COOKIE_SECRET=replace-with-openssl-rand-hex-32',
     'RELAY_SHARED_SECRET=replace-with-openssl-rand-hex-32',
     '',
   ].join('\n');
@@ -88,6 +91,16 @@ test('environment validator rejects public placeholders and accepts strong relea
     env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
   });
   assert.equal(accepted.status, 0, accepted.stderr);
+
+  await writeFile(envPath, strong.replace('WM_AUTH_COOKIE_SECRET=' + 'a'.repeat(64), 'WM_AUTH_COOKIE_SECRET=' + 'z'.repeat(64)), {
+    mode: 0o600,
+  });
+  const invalidCookieSecret = spawnSync(validator, [envLinkPath, authLinkPath], {
+    encoding: 'utf8',
+    env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
+  });
+  assert.notEqual(invalidCookieSecret.status, 0);
+  assert.match(invalidCookieSecret.stderr, /exactly 64 lowercase hexadecimal/);
 });
 
 test('documented self-host provider keys reach both the app and seeders', async () => {
@@ -131,12 +144,24 @@ test('Docker build scans attribution before generated handler bundles exist', as
 
 test('public proxy enforces HTTPS before authentication and keeps only liveness public', async () => {
   const proxy = await readFile(proxyPath, 'utf8');
+  const compose = await readFile(composePath, 'utf8');
+  const entrypoint = await readFile(authEntrypointPath, 'utf8');
+  const dockerfile = await readFile(authDockerfilePath, 'utf8');
 
   assert.match(proxy, /location = \/healthz[\s\S]*auth_basic off/);
   assert.match(proxy, /map \$http_x_forwarded_proto \$wm_redirect_https[\s\S]*http 1/);
   assert.match(proxy, /if \(\$wm_redirect_https\)[\s\S]*return 308 https:\/\/\$host\$request_uri/);
   assert.match(proxy, /location \/[\s\S]*auth_basic "World Monitor"/);
   assert.match(proxy, /auth_basic_user_file \/run\/secrets\/worldmonitor_htpasswd/);
+  assert.match(proxy, /satisfy any/);
+  assert.match(proxy, /auth_request \/_wm_cookie_auth/);
+  assert.match(proxy, /map_hash_bucket_size 128/);
+  assert.match(proxy, /Set-Cookie "wm_gateway=__WM_AUTH_COOKIE_SECRET__; Path=\/; Secure; HttpOnly; SameSite=Strict"/);
+  assert.doesNotMatch(proxy, /Set-Cookie[^\n]*always/);
+  assert.match(compose, /WM_AUTH_COOKIE_SECRET: "\$\{WM_AUTH_COOKIE_SECRET:\?[^}]+\}"/);
+  assert.match(entrypoint, /\^\[0-9a-f\]\{64\}\$/);
+  assert.match(entrypoint, /\/run\/nginx\/nginx\.conf/);
+  assert.match(dockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/auth-proxy-entrypoint"\]/);
   assert.match(proxy, /proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto/);
   assert.match(proxy, /Strict-Transport-Security "max-age=31536000" always/);
   assert.match(proxy, /X-Robots-Tag "noindex, nofollow, noarchive"/);
