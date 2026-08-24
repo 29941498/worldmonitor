@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -56,6 +56,8 @@ test('environment validator rejects public placeholders and accepts strong relea
   const directory = await mkdtemp(join(tmpdir(), 'worldmonitor-validator-'));
   const envPath = join(directory, 'env');
   const authPath = join(directory, 'auth');
+  const envLinkPath = join(directory, 'env-link');
+  const authLinkPath = join(directory, 'auth-link');
   const validator = fileURLToPath(validatorPath);
   const placeholders = [
     'REDIS_PASSWORD=replace-with-openssl-rand-hex-32',
@@ -69,6 +71,8 @@ test('environment validator rejects public placeholders and accepts strong relea
   await writeFile(authPath, 'investor:$apr1$12345678$abcdefghijklmnopqrstuv\n', { mode: 0o600 });
   await chmod(envPath, 0o600);
   await chmod(authPath, 0o600);
+  await symlink(envPath, envLinkPath);
+  await symlink(authPath, authLinkPath);
 
   const rejected = spawnSync(validator, [envPath, authPath], {
     encoding: 'utf8',
@@ -79,7 +83,7 @@ test('environment validator rejects public placeholders and accepts strong relea
 
   const strong = placeholders.replaceAll('replace-with-openssl-rand-hex-32', 'a'.repeat(64));
   await writeFile(envPath, strong, { mode: 0o600 });
-  const accepted = spawnSync(validator, [envPath, authPath], {
+  const accepted = spawnSync(validator, [envLinkPath, authLinkPath], {
     encoding: 'utf8',
     env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
   });

@@ -14,7 +14,7 @@ if [ ! -s "$auth_file" ]; then
   exit 66
 fi
 
-env_mode="$(stat -c '%a' "$env_file" 2>/dev/null || stat -f '%Lp' "$env_file")"
+env_mode="$(stat -Lc '%a' "$env_file" 2>/dev/null || stat -Lf '%Lp' "$env_file")"
 case "$env_mode" in
   600|400) ;;
   *) printf 'ERROR: %s must have mode 600 or 400 (found %s)\n' "$env_file" "$env_mode" >&2; exit 77 ;;
@@ -31,7 +31,7 @@ for key in REDIS_PASSWORD REDIS_TOKEN WM_SESSION_SECRET RELAY_SHARED_SECRET; do
   esac
 done
 
-auth_mode="$(stat -c '%a' "$auth_file" 2>/dev/null || stat -f '%Lp' "$auth_file")"
+auth_mode="$(stat -Lc '%a' "$auth_file" 2>/dev/null || stat -Lf '%Lp' "$auth_file")"
 case "$auth_mode" in
   600|400) ;;
   *) printf 'ERROR: %s must have mode 600 or 400 (found %s)\n' "$auth_file" "$auth_mode" >&2; exit 77 ;;
