@@ -38,24 +38,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const weatherSrc = readFileSync(join(root, 'src/services/weather.ts'), 'utf-8');
 
 describe('weather bootstrap read targets the public CDN-shielded URL (#5386)', () => {
-  it('fetches the marked public URL with credentials omitted', () => {
-    // Match the entire call expression so the URL literal is pinned exactly.
-    // `[\s\S]*?` spans the multi-line formatting; the terminating `)` keeps the
-    // match inside this one call.
-    const call = weatherSrc.match(/const resp = await fetch\(([\s\S]*?)\n {4}\);/);
-    assert.ok(call, 'could not locate the weather bootstrap fetch call in src/services/weather.ts');
-
-    const callArgs = call[1]!;
+  it('fetches the marked public URL with deployment-aware public API credentials', () => {
     assert.match(
-      callArgs,
-      /toApiUrl\('\/api\/bootstrap\?keys=weatherAlerts&public=1'\)/,
-      `weather must read the marked public URL; got: ${callArgs.trim()}`,
+      weatherSrc,
+      /const requestUrl = toApiUrl\('\/api\/bootstrap\?keys=weatherAlerts&public=1'\)/,
+      'weather must read the marked public URL',
     );
     assert.match(
-      callArgs,
-      /credentials: 'omit'/,
-      'credentials must be omitted: the marked URL answers every caller identically, and the '
-      + 'wm-session interceptor only waves through credential-less public reads',
+      weatherSrc,
+      /const resp = await fetch\(requestUrl, \{[\s\S]*?credentials: publicApiCredentials\(requestUrl\)/,
+      'hosted builds must omit credentials while login-gated self-hosted builds include the gateway cookie',
     );
   });
 

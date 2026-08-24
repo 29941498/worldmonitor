@@ -1,6 +1,7 @@
 import type { DecisionSignalProvenance } from '../../shared/decision-signal-provenance-contract';
 import { validateDecisionSignalProvenance } from '../../shared/decision-signal-provenance';
 import { ensureHydrated } from '@/services/bootstrap';
+import { publicApiCredentials } from '@/services/public-api-credentials';
 import { toApiUrl } from '@/services/runtime';
 import { createCircuitBreaker } from '@/utils/circuit-breaker';
 
@@ -329,13 +330,11 @@ export function createChinaPolicyService(options: ChinaPolicyServiceOptions = {}
       return hydrated;
     }
 
-    const response = await fetchImpl(
-      toApiUrl(`/api/bootstrap?keys=${CHINA_POLICY_EVENTS_BOOTSTRAP_KEY}&public=1`),
-      {
-        credentials: 'omit',
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
+    const requestUrl = toApiUrl(`/api/bootstrap?keys=${CHINA_POLICY_EVENTS_BOOTSTRAP_KEY}&public=1`);
+    const response = await fetchImpl(requestUrl, {
+      credentials: publicApiCredentials(requestUrl),
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!response.ok) throw new Error(`China policy bootstrap failed: HTTP ${response.status}`);
     const payload = (await response.json()) as { data?: Record<string, unknown> };
     const data = payload.data?.[CHINA_POLICY_EVENTS_BOOTSTRAP_KEY];

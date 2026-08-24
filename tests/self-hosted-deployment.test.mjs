@@ -23,6 +23,7 @@ test('production compose exposes only the loopback health port', async () => {
 
   assert.deepEqual(portLines, ['      - "127.0.0.1:${WM_LOCAL_HEALTH_PORT:-18100}:8080"']);
   assert.match(compose, /WM_TUNNEL_ORIGIN: http:\/\/auth-proxy:8080/);
+  assert.match(compose, /VITE_SELF_HOSTED_LOGIN_GATEWAY: "true"/);
   assert.match(compose, /subnet: 172\.31\.28\.0\/24/);
 });
 

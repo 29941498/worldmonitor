@@ -12,6 +12,9 @@ ARG NODE_IMAGE=node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd3
 # ── Stage 1: Builder ─────────────────────────────────────────────────────────
 FROM ${NODE_IMAGE} AS builder
 
+ARG VITE_SELF_HOSTED_LOGIN_GATEWAY=false
+ENV VITE_SELF_HOSTED_LOGIN_GATEWAY=${VITE_SELF_HOSTED_LOGIN_GATEWAY}
+
 WORKDIR /app
 
 # Install root dependencies (layer-cached until package.json changes)

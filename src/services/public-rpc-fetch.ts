@@ -1,4 +1,5 @@
 import { addPublicSharedRpcMarker } from '@/shared/public-rpc-cache';
+import { publicApiCredentials } from '@/services/public-api-credentials';
 
 const CREDENTIAL_HEADERS = ['Authorization', 'X-WorldMonitor-Key', 'X-Api-Key', 'Cookie'];
 
@@ -21,6 +22,6 @@ export const publicRpcFetch: typeof fetch = async (input, init) => {
     ...init,
     method: 'GET',
     headers,
-    credentials: 'omit',
+    credentials: publicApiCredentials(url),
   });
 };
