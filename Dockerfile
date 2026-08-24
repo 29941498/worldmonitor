@@ -7,8 +7,10 @@
 #   final         — nginx (static) + node (API) under supervisord
 # =============================================================================
 
+ARG NODE_IMAGE=node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+
 # ── Stage 1: Builder ─────────────────────────────────────────────────────────
-FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -19,13 +21,9 @@ RUN npm ci --ignore-scripts
 # Copy full source
 COPY . .
 
-# Generated inventory modules are intentionally untracked. Recreate them in
-# the clean image context before handlers import or bundle them.
+# Generated inventory modules are intentionally untracked. Recreate the initial
+# modules before handlers import or bundle them.
 RUN node scripts/generate-inventory-facts.mjs
-
-# Compile TypeScript API handlers → self-contained ESM bundles
-# Output is api/**/*.js alongside the source .ts files
-RUN node docker/build-handlers.mjs
 
 # public/pro/ is a build product, not committed bytes (#6898), so this image has
 # to build it. Skipping it does NOT 404: this image installs docker/nginx.conf,
@@ -39,6 +37,12 @@ RUN npm run build:pro
 # Build the crawlable static corpus and Vite frontend (outputs to dist/)
 # Skip blog build — blog-site has its own deps not installed here
 RUN npm run build:crawlable-corpus && npm run build:sitemap && npx tsc && npx vite build
+
+# Compile API handlers only after the attribution-scanned static corpus is
+# complete. The compiler writes bundled .js files beside their .ts sources;
+# generating those bundles earlier makes the source scanner count build
+# artifacts as new upstream declarations and breaks a clean Docker build.
+RUN node docker/build-handlers.mjs
 # Assert the /pro pages survived the public/ -> dist/ copy (#6898). build:pro
 # succeeding proves public/pro/ exists; it does NOT prove Vite copied it, and
 # docker/nginx.conf's SPA fallback would serve the dashboard shell at 200 for a
@@ -46,7 +50,7 @@ RUN npm run build:crawlable-corpus && npm run build:sitemap && npx tsc && npx vi
 RUN test -s dist/pro/index.html && test -s dist/pro/welcome.html
 
 # ── Stage 2: Runtime dependencies ───────────────────────────────────────────
-FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS runtime-deps
+FROM ${NODE_IMAGE} AS runtime-deps
 
 WORKDIR /app
 
@@ -60,7 +64,7 @@ COPY docker/runtime-package-lock.json ./package-lock.json
 RUN npm ci --omit=dev --omit=optional --ignore-scripts
 
 # ── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS final
+FROM ${NODE_IMAGE} AS final
 
 # nginx + supervisord
 RUN apk add --no-cache nginx supervisor gettext && \

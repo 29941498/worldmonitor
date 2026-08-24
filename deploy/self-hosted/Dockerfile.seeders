@@ -1,0 +1,15 @@
+ARG NODE_IMAGE=node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
+FROM ${NODE_IMAGE}
+
+RUN apk add --no-cache coreutils curl
+
+WORKDIR /workspace
+COPY scripts/package.json scripts/package-lock.json ./scripts/
+RUN npm ci --prefix scripts --omit=dev --omit=optional --ignore-scripts
+
+COPY . .
+RUN node scripts/generate-inventory-facts.mjs && \
+    chmod +x scripts/run-seeders.sh deploy/self-hosted/scripts/seeder-loop.sh
+
+USER node
+CMD ["/workspace/deploy/self-hosted/scripts/seeder-loop.sh"]
