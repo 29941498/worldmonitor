@@ -129,12 +129,16 @@ test('Docker build scans attribution before generated handler bundles exist', as
   assert.ok(handlerIndex > corpusIndex);
 });
 
-test('public proxy requires authentication and keeps only liveness public', async () => {
+test('public proxy enforces HTTPS before authentication and keeps only liveness public', async () => {
   const proxy = await readFile(proxyPath, 'utf8');
 
   assert.match(proxy, /location = \/healthz[\s\S]*auth_basic off/);
+  assert.match(proxy, /map \$http_x_forwarded_proto \$wm_redirect_https[\s\S]*http 1/);
+  assert.match(proxy, /if \(\$wm_redirect_https\)[\s\S]*return 308 https:\/\/\$host\$request_uri/);
   assert.match(proxy, /location \/[\s\S]*auth_basic "World Monitor"/);
   assert.match(proxy, /auth_basic_user_file \/run\/secrets\/worldmonitor_htpasswd/);
+  assert.match(proxy, /proxy_set_header X-Forwarded-Proto \$http_x_forwarded_proto/);
+  assert.match(proxy, /Strict-Transport-Security "max-age=31536000" always/);
   assert.match(proxy, /X-Robots-Tag "noindex, nofollow, noarchive"/);
 });
 
