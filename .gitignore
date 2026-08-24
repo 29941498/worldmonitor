@@ -26,6 +26,10 @@ docs/generated/stats.json
 *.log
 .env
 .env.local
+# Deployment credentials, generated public URL, and mutable shared state.
+deploy/self-hosted/.env.production
+deploy/self-hosted/shared/
+deploy/self-hosted/runtime/
 # Local plaintext env exports/backups (including tool-specific suffixes).
 .env*.bak*
 .env*-bak*

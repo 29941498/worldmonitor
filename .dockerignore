@@ -23,6 +23,8 @@ src-tauri/sidecar/node
 *.pem
 docker-compose.override.yml
 secrets/
+deploy/self-hosted/shared/
+deploy/self-hosted/runtime/
 *.md
 !README.md
 !CHANGELOG.md

@@ -1,0 +1,24 @@
+ARG TUNNEL_BASE_IMAGE=alpine:3.22
+FROM ${TUNNEL_BASE_IMAGE}
+
+ARG TARGETARCH
+ARG CLOUDFLARED_VERSION=2026.8.2
+ARG CLOUDFLARED_AMD64_SHA256=fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2
+
+RUN apk add --no-cache ca-certificates curl && \
+    test "$TARGETARCH" = "amd64" && \
+    curl --fail --location --retry 3 \
+      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64" \
+      --output /usr/local/bin/cloudflared && \
+    echo "${CLOUDFLARED_AMD64_SHA256}  /usr/local/bin/cloudflared" | sha256sum -c - && \
+    chmod 0755 /usr/local/bin/cloudflared && \
+    addgroup -S tunnel && adduser -S -G tunnel tunnel
+
+COPY deploy/self-hosted/scripts/quick-tunnel-entrypoint.sh /usr/local/bin/quick-tunnel-entrypoint
+RUN chmod 0755 /usr/local/bin/quick-tunnel-entrypoint && mkdir -p /runtime && chown tunnel:tunnel /runtime
+
+USER tunnel
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD test -s /runtime/public-url.txt || exit 1
+
+ENTRYPOINT ["/usr/local/bin/quick-tunnel-entrypoint"]
