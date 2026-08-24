@@ -10,7 +10,9 @@ container, network, volume, port, or reverse-proxy configuration.
   (`127.0.0.1:18100` by default).
 - Redis, the REST adapter, relay, seeder, and login gateway are internal-only.
 - Public traffic enters through a Cloudflare Quick Tunnel and is challenged by
-  an Nginx Basic Auth gateway before it reaches the application.
+  an Nginx Basic Auth gateway before it reaches the application. Plain HTTP is
+  redirected to HTTPS before the authentication challenge, and authenticated
+  HTTPS responses carry HSTS.
 - Secrets, the password hash, the plaintext bootstrap credential, tunnel logs,
   and the generated public URL are ignored by Git.
 
