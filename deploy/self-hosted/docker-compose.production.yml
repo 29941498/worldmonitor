@@ -192,6 +192,8 @@ services:
       args:
         NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
     image: "worldmonitor/auth-proxy:${WM_IMAGE_TAG:-local}"
+    environment:
+      WM_AUTH_COOKIE_SECRET: "${WM_AUTH_COOKIE_SECRET:?WM_AUTH_COOKIE_SECRET is required}"
     volumes:
       - type: bind
         source: "${WM_AUTH_FILE:-./shared/auth/worldmonitor.htpasswd}"

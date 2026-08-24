@@ -37,12 +37,17 @@ mkdir -p shared/auth runtime
 chmod 700 shared shared/auth runtime
 ```
 
-Generate the four required random values in `.env.production`. The validator
+Generate the five required random values in `.env.production`. The validator
 rejects public placeholders and values shorter than 32 characters. Generate a
 long, random login password, write its APR1 hash as
 `investor:<hash>` to `shared/auth/worldmonitor.htpasswd`, and store the one-time
 plaintext credential in `shared/auth/login-bootstrap.txt`; both files must be
 mode 600. Never commit either file.
+
+`WM_AUTH_COOKIE_SECRET` must be a 64-character lowercase hexadecimal value
+(for example, from `openssl rand -hex 32`). The login gateway uses it only for
+a Secure, HttpOnly, browser-session cookie after Basic Auth succeeds so the
+dashboard service worker can authenticate same-origin API requests.
 
 Release directories must be named `worldmonitor-<git-sha>`; `deploy.sh` derives
 immutable image tags from that suffix so rolling back cannot overwrite the newer
