@@ -47,6 +47,8 @@ test('LemonBus edge config terminates TLS and proxies to the authenticated priva
   assert.match(nginx, /return 301 https:\/\/wm\.lemonbus\.cn\$request_uri/);
   assert.match(nginx, /ssl_certificate \/data\/cert\/wm\/wm\.lemonbus\.cn\.pem/);
   assert.match(nginx, /server 192\.168\.10\.30:18101/);
+  assert.match(nginx, /proxy_hide_header Strict-Transport-Security/);
+  assert.match(nginx, /proxy_hide_header X-Robots-Tag/);
   assert.match(nginx, /proxy_set_header X-Forwarded-Proto https/);
   assert.match(nginx, /proxy_set_header CF-Connecting-IP \$remote_addr/);
   assert.match(nginx, /proxy_set_header Upgrade \$http_upgrade/);
