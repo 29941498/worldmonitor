@@ -7,7 +7,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const composePath = new URL('../deploy/self-hosted/docker-compose.production.yml', import.meta.url);
+const domainComposePath = new URL('../deploy/self-hosted/docker-compose.domain.yml', import.meta.url);
 const proxyPath = new URL('../deploy/self-hosted/nginx/auth-proxy.conf', import.meta.url);
+const domainNginxPath = new URL('../deploy/self-hosted/nginx/wm.lemonbus.cn.conf', import.meta.url);
 const ignorePath = new URL('../.gitignore', import.meta.url);
 const dockerIgnorePath = new URL('../.dockerignore', import.meta.url);
 const validatorPath = new URL('../deploy/self-hosted/scripts/validate-env.sh', import.meta.url);
@@ -27,12 +29,40 @@ test('production compose exposes only the loopback health port', async () => {
   assert.match(compose, /subnet: 172\.31\.28\.0\/24/);
 });
 
+test('stable-domain override publishes only the authenticated gateway', async () => {
+  const compose = await readFile(domainComposePath, 'utf8');
+  const envExample = await readFile(envExamplePath, 'utf8');
+
+  assert.match(compose, /auth-proxy:[\s\S]*"\$\{WM_AUTH_BIND_IP:-127\.0\.0\.1\}:\$\{WM_AUTH_PORT:-18101\}:8080"/);
+  assert.match(compose, /quick-tunnel:[\s\S]*profiles:[\s\S]*- quick-tunnel/);
+  assert.match(envExample, /^WM_AUTH_BIND_IP=127\.0\.0\.1$/m);
+  assert.match(envExample, /^WM_AUTH_PORT=18101$/m);
+  assert.doesNotMatch(compose, /redis-rest:[\s\S]*ports:/);
+});
+
+test('LemonBus edge config terminates TLS and proxies to the authenticated private port', async () => {
+  const nginx = await readFile(domainNginxPath, 'utf8');
+
+  assert.match(nginx, /server_name wm\.lemonbus\.cn/);
+  assert.match(nginx, /return 301 https:\/\/wm\.lemonbus\.cn\$request_uri/);
+  assert.match(nginx, /ssl_certificate \/data\/cert\/wm\/wm\.lemonbus\.cn\.pem/);
+  assert.match(nginx, /server 192\.168\.10\.30:18101/);
+  assert.match(nginx, /proxy_set_header X-Forwarded-Proto https/);
+  assert.match(nginx, /proxy_set_header CF-Connecting-IP \$remote_addr/);
+  assert.match(nginx, /proxy_set_header Upgrade \$http_upgrade/);
+  assert.match(nginx, /Strict-Transport-Security "max-age=31536000" always/);
+  assert.doesNotMatch(nginx, /auth_basic_user_file/);
+});
+
 test('release deployment resolves physical symlinks and mounts the validated auth file', async () => {
   const compose = await readFile(composePath, 'utf8');
   const deployScript = await readFile(deployScriptPath, 'utf8');
 
   assert.match(deployScript, /pwd -P/);
   assert.match(deployScript, /export WM_IMAGE_TAG WM_AUTH_FILE/);
+  assert.match(deployScript, /WM_COMPOSE_OVERRIDE_FILE/);
+  assert.match(deployScript, /Compose override is not readable/);
+  assert.match(deployScript, /--file "\$compose_override_file"/);
   assert.match(compose, /source: "\$\{WM_AUTH_FILE:-\.\/shared\/auth\/worldmonitor\.htpasswd\}"/);
 });
 

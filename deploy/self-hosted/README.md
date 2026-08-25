@@ -8,7 +8,9 @@ container, network, volume, port, or reverse-proxy configuration.
 
 - Only the application liveness endpoint is published on server loopback
   (`127.0.0.1:18100` by default).
-- Redis, the REST adapter, relay, seeder, and login gateway are internal-only.
+- Redis, the REST adapter, relay, and seeder are internal-only. The login
+  gateway is internal-only in the base stack; the stable-domain override can
+  publish it on one explicitly selected loopback or private address.
 - Public traffic enters through a Cloudflare Quick Tunnel and is challenged by
   an Nginx Basic Auth gateway before it reaches the application. Plain HTTP is
   redirected to HTTPS before the authentication challenge, and authenticated
@@ -25,6 +27,37 @@ server-sent-events support. See the official
 [Quick Tunnel documentation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
 Replace this service with a named tunnel and a domain before treating the
 endpoint as durable production infrastructure.
+
+## Stable domain ingress
+
+`docker-compose.domain.yml` switches ingress from the temporary Quick Tunnel to
+an operator-managed HTTPS reverse proxy. It publishes only `auth-proxy`; the
+application liveness port, Redis, REST adapter, AIS relay, and seeders retain
+their base-stack exposure. The bind defaults to `127.0.0.1:18101`.
+
+When the reverse proxy is on another trusted host, set `WM_AUTH_BIND_IP` to the
+World Monitor server's private interface and keep that port off the public
+router. For the LemonBus deployment, the checked-in Nginx configuration proxies
+`wm.lemonbus.cn` to `192.168.10.30:18101`, preserves WebSocket upgrades and the
+original client chain, redirects HTTP to HTTPS, and uses the dedicated
+`wm.lemonbus.cn` certificate.
+
+Run the same immutable release deployment with the override enabled:
+
+```sh
+export WM_COMPOSE_OVERRIDE_FILE="$PWD/docker-compose.domain.yml"
+./scripts/deploy.sh
+```
+
+The override puts `quick-tunnel` behind the opt-in `quick-tunnel` profile, so a
+normal stable-domain deployment does not recreate the temporary public URL. To
+bring it back during an ingress rollback, use both the override and
+`--profile quick-tunnel` with Docker Compose, or deploy the base stack without
+the override.
+
+Install `nginx/wm.lemonbus.cn.conf` on the HTTPS gateway only after verifying
+the certificate/key pair and private upstream reachability. Always run
+`nginx -t` before reloading Nginx.
 
 ## Bootstrap
 
@@ -79,12 +112,20 @@ request must return `200`. Data-source truth must be judged from the compact
 health verdict, seed metadata timestamps, record counts, and source-specific
 errors—not from a successful dashboard render alone.
 
+For the stable domain, also verify strict certificate validation, the HTTP to
+HTTPS redirect, anonymous `401`, authenticated HTML and API responses, HSTS,
+Secure/HttpOnly/SameSite cookies, WebSocket/long-request proxy behavior, and
+that the private auth port cannot be reached through the public router.
+
 ## Release and rollback
 
 Deploy immutable source trees under `/home/qnyx/releases/worldmonitor-<sha>`.
 Keep `/home/qnyx/worldmonitor-current` and `/home/qnyx/worldmonitor-previous` as
 symlinks. Store mutable auth/runtime state under
 `/home/qnyx/worldmonitor-shared` and bind or symlink it into each release.
+
+Use the same `WM_COMPOSE_OVERRIDE_FILE` value for every stable-domain release
+and rollback. Omitting it intentionally returns to the base Quick Tunnel mode.
 
 To roll back, validate that `worldmonitor-previous` resolves to an existing
 release, stop the current project, point `worldmonitor-current` to the previous
