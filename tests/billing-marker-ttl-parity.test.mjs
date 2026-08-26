@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { strict as assert } from 'node:assert';
+import { fileURLToPath } from 'node:url';
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
 
@@ -128,7 +129,7 @@ test('exactly three files derive the entitlements cache key', async () => {
   // in the repo would be invisible to it — the drift would be silent in exactly
   // the way #5600 was. Pin the count repo-wide.
   const { execFileSync } = await import('node:child_process');
-  const root = new URL('../', import.meta.url).pathname;
+  const root = fileURLToPath(new URL('../', import.meta.url));
   const out = execFileSync(
     'git',
     ['grep', '-l', '-F', 'entitlements:${', '--', 'api', 'server', 'convex', 'src', 'scripts'],

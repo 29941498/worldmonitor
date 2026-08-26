@@ -493,7 +493,7 @@ test('late compression callbacks cannot overwrite a newer AIS snapshot generatio
       AIS_SNAPSHOT_INTERVAL_MS: '60000',
       NODE_OPTIONS: [
         process.env.NODE_OPTIONS,
-        `--require=${delayedCompressionHook}`,
+        `--require=${JSON.stringify(delayedCompressionHook)}`,
       ].filter(Boolean).join(' '),
       RELAY_SHARED_SECRET: 'relay-secret',
       RELAY_TEST_MODE: 'true',

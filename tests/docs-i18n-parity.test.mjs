@@ -11,9 +11,10 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const DOCS_JSON = join(ROOT, 'docs', 'docs.json');
 const DOCS_DIR = join(ROOT, 'docs');
 

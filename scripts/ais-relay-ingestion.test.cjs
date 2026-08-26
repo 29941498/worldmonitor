@@ -52,7 +52,7 @@ function spawnRelay(extraEnv) {
       OPENSKY_REQUEST_SPACING_MS: '1',
       OPENSKY_CLIENT_ID: 'test-client',
       OPENSKY_CLIENT_SECRET: 'test-secret',
-      NODE_OPTIONS: `--require=${preload}`,
+      NODE_OPTIONS: `--require=${JSON.stringify(preload)}`,
       ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
