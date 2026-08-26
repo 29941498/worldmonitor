@@ -51,6 +51,8 @@
     "locales:zh-tw:check": "python3 scripts/convert-zh-tw.py --check",
     "sync:bootstrap-tier-keys": "node scripts/sync-bootstrap-tier-keys.mjs",
     "sync:bootstrap-tier-keys:check": "node scripts/sync-bootstrap-tier-keys.mjs --check",
+    "bundle:budgets": "node scripts/bundle-budgets.mjs",
+    "bundle:check": "node scripts/bundle-budgets.mjs --check",
     "sandbox:fixtures": "node scripts/generate-sandbox-fixtures.mjs",
     "sandbox:fixtures:check": "node scripts/generate-sandbox-fixtures.mjs --check",
     "product:facts": "node --import tsx scripts/generate-product-config.mjs && node --import tsx scripts/generate-public-product-facts.mjs && npm run inventory:facts",

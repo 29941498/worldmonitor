@@ -633,7 +633,9 @@ export class DataLoaderManager implements AppModule {
 
     if (this.digestBreaker.state === 'open') {
       if (now < this.digestBreaker.cooldownUntil) {
-        return this.getRetainedDigest(requestKey) ?? await this.loadPersistedDigest(requestKey);
+        const fallback = this.getRetainedDigest(requestKey) ?? await this.loadPersistedDigest(requestKey);
+        this.reportDigestCoverage(fallback, fallback ? 'stale' : 'unavailable');
+        return fallback;
       }
       this.digestBreaker.state = 'half-open';
     }
@@ -664,9 +666,12 @@ export class DataLoaderManager implements AppModule {
         // The response is valid for the scope it requested and may refresh that
         // scope's persistent cache, but it must not become live data or an
         // in-memory fallback for the language now active.
-        return this.getRetainedDigest(currentKey) ?? await this.loadPersistedDigest(currentKey);
+        const fallback = this.getRetainedDigest(currentKey) ?? await this.loadPersistedDigest(currentKey);
+        this.reportDigestCoverage(fallback, fallback ? 'stale' : 'unavailable');
+        return fallback;
       }
       this.lastGoodDigest = retainRicherScopedDigest(this.lastGoodDigest, requestKey, data);
+      this.reportDigestCoverage(data);
       return data;
     } catch (e) {
       markLcpDebug('wm:data:feed-digest-error');
@@ -677,7 +682,9 @@ export class DataLoaderManager implements AppModule {
         this.digestBreaker.cooldownUntil = now + this.digestBreakerCooldownMs;
       }
       const currentKey = this.digestCacheKey();
-      return this.getRetainedDigest(currentKey) ?? await this.loadPersistedDigest(currentKey);
+      const fallback = this.getRetainedDigest(currentKey) ?? await this.loadPersistedDigest(currentKey);
+      this.reportDigestCoverage(fallback, fallback ? 'stale' : 'unavailable');
+      return fallback;
     }
   }
 
@@ -722,6 +729,50 @@ export class DataLoaderManager implements AppModule {
 
   private getRetainedDigest(key = this.digestCacheKey()): ListFeedDigestResponse | null {
     return getScopedDigest(this.lastGoodDigest, key);
+  }
+
+  /**
+   * #7085: surface the digest's coverage block on the status panel. Runtime
+   * guards throughout — persisted last-good digests from before the coverage
+   * rollout carry no coverage field at all.
+   */
+  private reportDigestCoverage(
+    digest: ListFeedDigestResponse | null,
+    stateOverride?: 'stale' | 'unavailable',
+  ): void {
+    const cov = digest?.coverage;
+    if (!cov || typeof cov.state !== 'string') {
+      const categoryEntries = digest ? Object.entries(digest.categories) : [];
+      const items = categoryEntries.flatMap(([, bucket]) => bucket.items);
+      this.ctx.statusPanel?.updateDigestCoverage({
+        state: stateOverride ?? 'unknown',
+        itemsServed: items.length,
+        publisherCount: new Set(items.map(item => item.source).filter(Boolean)).size,
+        feedsCompleted: 0,
+        feedsTotal: 0,
+        categoriesCompleted: categoryEntries.filter(([, bucket]) => bucket.items.length > 0).length,
+        categoriesTotal: categoryEntries.length,
+        missingCategories: categoryEntries
+          .filter(([, bucket]) => bucket.items.length === 0)
+          .map(([category]) => category),
+      });
+      return;
+    }
+    const state = stateOverride ?? (cov.state === 'complete' || cov.state === 'partial' || cov.state === 'stale' || cov.state === 'unavailable'
+      ? cov.state
+      : 'unknown');
+    this.ctx.statusPanel?.updateDigestCoverage({
+      state,
+      itemsServed: Number(cov.itemsServed) || 0,
+      publisherCount: Number(cov.publisherCount) || 0,
+      feedsCompleted: Number(cov.feedCompleted) || 0,
+      feedsTotal: Number(cov.feedTotal) || 0,
+      categoriesCompleted: Number(cov.categoryCompleted) || 0,
+      categoriesTotal: Number(cov.categoryTotal) || 0,
+      missingCategories: Object.entries(cov.categoryStates ?? {})
+        .filter(([, v]) => v === 'missing')
+        .map(([k]) => k),
+    });
   }
 
   private async loadPersistedDigest(key = this.digestCacheKey()): Promise<ListFeedDigestResponse | null> {

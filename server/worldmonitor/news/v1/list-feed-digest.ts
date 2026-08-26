@@ -21,6 +21,7 @@ import {
 } from './_feeds';
 import { classifyByKeyword, hasHistoricalMarker, type ThreatLevel } from './_classifier';
 import {
+  buildDigestCoverage,
   cachedAttemptFrom,
   classifyFeedAttempt,
   interleaveByCategory,
@@ -91,6 +92,50 @@ const OVERALL_DEADLINE_MS = VERCEL_INITIAL_RESPONSE_LIMIT_MS - POST_FETCH_HEADRO
 const BATCH_CONCURRENCY = 20;
 
 type DigestFeedEntry = { attemptId: string; category: string; feed: ServerFeed };
+
+function markFallbackCoverageStale(
+  fallback: ListFeedDigestResponse,
+  attemptedAt: string,
+): ListFeedDigestResponse {
+  const coverage = fallback.coverage;
+  if (coverage) {
+    return {
+      ...fallback,
+      coverage: {
+        ...coverage,
+        state: 'stale',
+        attemptedAt,
+      },
+    };
+  }
+
+  // Redis can still contain a digest written before the coverage field was
+  // introduced. Keep that retained content useful, but do not describe it as
+  // current. Only content-derived counts can be reconstructed here.
+  const categoryEntries = Object.entries(fallback.categories);
+  const items = categoryEntries.flatMap(([, bucket]) => bucket.items);
+  const categoryStates = Object.fromEntries(
+    categoryEntries.map(([category, bucket]) => [category, bucket.items.length > 0 ? 'ok' : 'missing']),
+  );
+  return {
+    ...fallback,
+    coverage: {
+      state: 'stale',
+      attemptedAt,
+      itemsServed: items.length,
+      publisherCount: new Set(items.map(item => publisherFamilyFor(item.source))).size,
+      feedTotal: 0,
+      feedCompleted: 0,
+      categoryTotal: Object.keys(categoryStates).length,
+      categoryCompleted: Object.values(categoryStates).filter(state => state === 'ok').length,
+      categoryStates,
+      droppedFeedCap: 0,
+      droppedUndated: 0,
+      droppedFreshness: 0,
+      droppedCategoryCap: 0,
+    },
+  };
+}
 
 // U3 — hard freshness floor (default 96h, env override NEWS_MAX_AGE_HOURS).
 // Items older than this are dropped before scoring. The 24h `recencyScore`
@@ -1286,8 +1331,31 @@ export async function listFeedDigest(
 
   const digestCacheKey = `news:digest:v1:${variant}:${lang}`;
   const fallbackKey = `${variant}:${lang}`;
+  const attemptedAt = new Date().toISOString();
 
-  const empty = (): ListFeedDigestResponse => ({ categories: {}, feedStatuses: {}, generatedAt: new Date().toISOString() });
+  // #7085: an empty response still carries an explicit `unavailable`
+  // coverage block so clients can distinguish "nothing served" from
+  // "digest temporarily absent".
+  const empty = (): ListFeedDigestResponse => ({
+    categories: {},
+    feedStatuses: {},
+    generatedAt: new Date().toISOString(),
+    coverage: {
+      state: 'unavailable',
+      attemptedAt: new Date().toISOString(),
+      itemsServed: 0,
+      publisherCount: 0,
+      feedTotal: 0,
+      feedCompleted: 0,
+      categoryTotal: 0,
+      categoryCompleted: 0,
+      categoryStates: {},
+      droppedFeedCap: 0,
+      droppedUndated: 0,
+      droppedFreshness: 0,
+      droppedCategoryCap: 0,
+    },
+  });
 
   try {
     // cachedFetchJson coalesces concurrent cold-path calls: concurrent requests
@@ -1308,7 +1376,8 @@ export async function listFeedDigest(
 
     if (fresh === null) {
       markNoCacheResponse(ctx.request);
-      return fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+      const fallback = fallbackDigestCache.get(fallbackKey)?.data;
+      return fallback ? markFallbackCoverageStale(fallback, attemptedAt) : empty();
     }
 
     if (fallbackDigestCache.size > 50) fallbackDigestCache.clear();
@@ -1316,7 +1385,8 @@ export async function listFeedDigest(
     return fresh;
   } catch {
     markNoCacheResponse(ctx.request);
-    return fallbackDigestCache.get(fallbackKey)?.data ?? empty();
+    const fallback = fallbackDigestCache.get(fallbackKey)?.data;
+    return fallback ? markFallbackCoverageStale(fallback, attemptedAt) : empty();
   }
 }
 
@@ -2033,10 +2103,28 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
       );
     }
 
+    // #7085 coverage block: one compact summary of the content served and
+    // the latest build attempt. Content identity (generatedAt) and attempt
+    // identity (attemptedAt) are separate on purpose — they diverge the day
+    // durable last-good serving lands (#7084). Counts only: no raw errors,
+    // feed URLs, hostnames, or per-host timings leave the server.
+    // servingStale stays false until durable last-good serving (#7084).
+    const coverage = buildDigestCoverage({
+      entries: allEntries,
+      attemptOutcomes: attempts.attemptOutcomes,
+      itemsServed: allSliced.length,
+      publisherSources: allSliced.map((item) => publisherFamilyFor(item.originPublisher || item.source)),
+      deadlineAborted: deadlineController.signal.aborted,
+      servingStale: false,
+      drops: { ...ledgerDrops },
+      buildStartMs: buildStart,
+    });
+
     return {
       categories,
       feedStatuses,
       generatedAt: new Date().toISOString(),
+      coverage,
     };
   } finally {
     clearTimeout(deadlineTimeout);
@@ -2045,6 +2133,7 @@ async function buildDigest(variant: string, lang: string): Promise<ListFeedDiges
 
 /** Internal exports for unit tests only — do not import in production code. */
 export const __testing__ = {
+  markFallbackCoverageStale,
   buildDigestFeedBatches,
   parseRssXml,
   decodeXmlEntities,
