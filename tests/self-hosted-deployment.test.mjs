@@ -46,6 +46,7 @@ test('egress override keeps the proxy private and applies it to external-fetch s
   const envExample = await readFile(envExamplePath, 'utf8');
 
   assert.match(compose, /^  egress-proxy:\n/m);
+  assert.match(compose, /egress-proxy:[\s\S]*user: "\$\{WM_RUNTIME_UID:-1000\}:\$\{WM_RUNTIME_GID:-1000\}"/);
   assert.match(compose, /egress-proxy:[\s\S]*restart: unless-stopped/);
   assert.match(compose, /egress-proxy:[\s\S]*read_only: true/);
   assert.match(compose, /egress-proxy:[\s\S]*cap_drop:[\s\S]*- ALL/);
