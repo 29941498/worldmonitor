@@ -20,6 +20,7 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
 import {
@@ -30,7 +31,7 @@ import {
   DOC_VALIDATORS,
 } from '../scripts/docs-stats.mjs';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 
 const REAL_STATS = computeStats();

@@ -1,0 +1,12 @@
+services:
+  auth-proxy:
+    ports:
+      - "${WM_AUTH_BIND_IP:-127.0.0.1}:${WM_AUTH_PORT:-18101}:8080"
+
+  # Stable-domain deployments enter through the operator-managed reverse
+  # proxy. Keep the temporary Quick Tunnel available only when its profile is
+  # requested explicitly, so a future `up` cannot silently recreate a second
+  # public entrance.
+  quick-tunnel:
+    profiles:
+      - quick-tunnel

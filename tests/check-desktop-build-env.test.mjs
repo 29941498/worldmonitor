@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   EXCLUDED_DESKTOP_BUILD_ENV,
@@ -15,6 +16,7 @@ import {
 
 const ENV_LINES = REQUIRED_DESKTOP_BUILD_ENV.map((k) => `          ${k}: x`).join('\n');
 const FIXTURE_WORKFLOWS = ['.github/workflows/build-desktop.yml', '.github/workflows/test-linux-app.yml'];
+const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 function buildWorkflow(envLines = ENV_LINES, { stepCount = 4, removeKeyFromStep = -1 } = {}) {
   const steps = Array.from({ length: stepCount }, (_, index) => {
@@ -279,7 +281,7 @@ describe('check-desktop-build-env', () => {
   });
 
   it('exercises the CLI success and failure paths', () => {
-    const script = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../scripts/check-desktop-build-env.mjs');
+    const script = path.resolve(TEST_DIR, '../scripts/check-desktop-build-env.mjs');
     const validRoot = fixtureRoot();
     const output = execFileSync(process.execPath, [script, '--root', validRoot], { encoding: 'utf8' });
     assert.match(output, /desktop build env OK/);
@@ -292,7 +294,7 @@ describe('check-desktop-build-env', () => {
   });
 
   it('holds against the real workflows and SPA source', () => {
-    const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+    const repoRoot = path.resolve(TEST_DIR, '..');
     assert.deepEqual(checkDesktopBuildEnv(repoRoot), []);
   });
 });

@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 import { PREMIUM_RPC_PATHS } from '../src/shared/premium-paths.ts';
 
-const repoRoot = resolve(new URL('..', import.meta.url).pathname);
+const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 describe('summarize-article premium client wiring', () => {
   it('uses premiumFetch so Pro browser sessions attach Bearer auth', () => {

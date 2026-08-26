@@ -19,7 +19,6 @@ services:
       context: ../..
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
         VITE_SELF_HOSTED_LOGIN_GATEWAY: "true"
     image: "worldmonitor/app:${WM_IMAGE_TAG:-local}"
     ports:
@@ -66,8 +65,6 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.relay
-      args:
-        NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
     image: "worldmonitor/ais-relay:${WM_IMAGE_TAG:-local}"
     environment:
       RELAY_SHARED_SECRET: "${RELAY_SHARED_SECRET:?RELAY_SHARED_SECRET is required}"
@@ -87,7 +84,7 @@ services:
 
   redis:
     <<: *common-service
-    image: "${WM_REDIS_IMAGE:-redis:7-alpine}"
+    image: "redis:7-alpine@sha256:1db42ccef14898aa29bae778452d567534b59c107129cbc1163fb552de184d3c"
     command:
       - redis-server
       - --requirepass
@@ -116,8 +113,6 @@ services:
     build:
       context: ../../docker
       dockerfile: Dockerfile.redis-rest
-      args:
-        NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
     image: "worldmonitor/redis-rest:${WM_IMAGE_TAG:-local}"
     environment:
       SRH_TOKEN: "${REDIS_TOKEN:?REDIS_TOKEN is required}"
@@ -141,8 +136,6 @@ services:
     build:
       context: ../..
       dockerfile: deploy/self-hosted/Dockerfile.seeders
-      args:
-        NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
     image: "worldmonitor/seeders:${WM_IMAGE_TAG:-local}"
     environment:
       UPSTASH_REDIS_REST_URL: http://redis-rest:80
@@ -190,8 +183,6 @@ services:
     build:
       context: ../..
       dockerfile: deploy/self-hosted/Dockerfile.auth-proxy
-      args:
-        NODE_IMAGE: "${WM_NODE_IMAGE:-node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43}"
     image: "worldmonitor/auth-proxy:${WM_IMAGE_TAG:-local}"
     environment:
       WM_AUTH_COOKIE_SECRET: "${WM_AUTH_COOKIE_SECRET:?WM_AUTH_COOKIE_SECRET is required}"
@@ -213,7 +204,6 @@ services:
       context: ../..
       dockerfile: deploy/self-hosted/Dockerfile.quick-tunnel
       args:
-        TUNNEL_BASE_IMAGE: "${WM_TUNNEL_BASE_IMAGE:-alpine:3.22}"
         CLOUDFLARED_VERSION: "${CLOUDFLARED_VERSION:-2026.8.2}"
         CLOUDFLARED_AMD64_SHA256: "${CLOUDFLARED_AMD64_SHA256:-fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2}"
     image: "worldmonitor/quick-tunnel:${WM_IMAGE_TAG:-local}"
