@@ -1,0 +1,60 @@
+x-egress-environment: &egress-environment
+  NODE_USE_ENV_PROXY: "1"
+  HTTP_PROXY: "${WM_EGRESS_PROXY_URL:-http://egress-proxy:10808}"
+  HTTPS_PROXY: "${WM_EGRESS_PROXY_URL:-http://egress-proxy:10808}"
+  PROXY_URL: "${WM_EGRESS_PROXY_URL:-http://egress-proxy:10808}"
+  NO_PROXY: "${WM_EGRESS_NO_PROXY:-redis,redis-rest,ais-relay,auth-proxy,worldmonitor,egress-proxy,localhost,127.0.0.1}"
+
+services:
+  # This proxy is an independent World Monitor runtime. Its image and config
+  # are provisioned on the host and are never built into or committed with the
+  # application release. It is reachable only on worldmonitor-internal.
+  egress-proxy:
+    image: "${WM_EGRESS_PROXY_IMAGE:?WM_EGRESS_PROXY_IMAGE is required}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - type: bind
+        source: "${WM_EGRESS_PROXY_CONFIG:?WM_EGRESS_PROXY_CONFIG is required}"
+        target: /etc/xray/config.json
+        read_only: true
+    networks:
+      - worldmonitor-internal
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/xray", "run", "-test", "-c", "/etc/xray/config.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    mem_limit: 128m
+    cpus: 0.25
+
+  worldmonitor:
+    environment:
+      <<: *egress-environment
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+
+  ais-relay:
+    environment:
+      <<: *egress-environment
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+
+  seeders:
+    environment:
+      <<: *egress-environment
+    depends_on:
+      egress-proxy:
+        condition: service_healthy

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const composePath = new URL('../deploy/self-hosted/docker-compose.production.yml', import.meta.url);
 const domainComposePath = new URL('../deploy/self-hosted/docker-compose.domain.yml', import.meta.url);
+const egressComposePath = new URL('../deploy/self-hosted/docker-compose.egress.yml', import.meta.url);
 const proxyPath = new URL('../deploy/self-hosted/nginx/auth-proxy.conf', import.meta.url);
 const domainNginxPath = new URL('../deploy/self-hosted/nginx/wm.lemonbus.cn.conf', import.meta.url);
 const ignorePath = new URL('../.gitignore', import.meta.url);
@@ -40,6 +41,31 @@ test('stable-domain override publishes only the authenticated gateway', async ()
   assert.doesNotMatch(compose, /redis-rest:[\s\S]*ports:/);
 });
 
+test('egress override keeps the proxy private and applies it to external-fetch services', async () => {
+  const compose = await readFile(egressComposePath, 'utf8');
+  const envExample = await readFile(envExamplePath, 'utf8');
+
+  assert.match(compose, /^  egress-proxy:\n/m);
+  assert.match(compose, /egress-proxy:[\s\S]*restart: unless-stopped/);
+  assert.match(compose, /egress-proxy:[\s\S]*read_only: true/);
+  assert.match(compose, /egress-proxy:[\s\S]*cap_drop:[\s\S]*- ALL/);
+  assert.match(compose, /source: "\$\{WM_EGRESS_PROXY_CONFIG:\?[^}]+\}"/);
+  assert.match(compose, /target: \/etc\/xray\/config\.json[\s\S]*read_only: true/);
+  assert.match(compose, /test: \["CMD", "\/usr\/local\/bin\/xray", "run", "-test", "-c", "\/etc\/xray\/config\.json"\]/);
+  assert.doesNotMatch(compose, /egress-proxy:[\s\S]*ports:/);
+
+  for (const service of ['worldmonitor', 'ais-relay', 'seeders']) {
+    assert.match(compose, new RegExp(`^  ${service}:\\n[\\s\\S]*?<<: \\*egress-environment`, 'm'));
+    assert.match(compose, new RegExp(`^  ${service}:\\n[\\s\\S]*?egress-proxy:\\n        condition: service_healthy`, 'm'));
+  }
+
+  assert.match(compose, /NODE_USE_ENV_PROXY: "1"/);
+  assert.match(compose, /HTTP_PROXY: "\$\{WM_EGRESS_PROXY_URL:-http:\/\/egress-proxy:10808\}"/);
+  assert.match(compose, /NO_PROXY: "\$\{WM_EGRESS_NO_PROXY:-[^\n]*redis-rest[^\n]*localhost[^\n]*\}"/);
+  assert.match(envExample, /^WM_EGRESS_PROXY_IMAGE=worldmonitor\/egress-proxy:xray-25\.8\.3$/m);
+  assert.match(envExample, /^WM_EGRESS_PROXY_CONFIG=\.\/shared\/egress\/xray-config\.json$/m);
+});
+
 test('LemonBus edge config terminates TLS and proxies to the authenticated private port', async () => {
   const nginx = await readFile(domainNginxPath, 'utf8');
 
@@ -63,9 +89,32 @@ test('release deployment resolves physical symlinks and mounts the validated aut
   assert.match(deployScript, /pwd -P/);
   assert.match(deployScript, /export WM_IMAGE_TAG WM_AUTH_FILE/);
   assert.match(deployScript, /WM_COMPOSE_OVERRIDE_FILE/);
+  assert.match(deployScript, /WM_COMPOSE_EGRESS_FILE/);
+  assert.match(deployScript, /export WM_IMAGE_TAG WM_AUTH_FILE WM_EGRESS_PROXY_CONFIG/);
   assert.match(deployScript, /Compose override is not readable/);
+  assert.match(deployScript, /Egress Compose override is not readable/);
   assert.match(deployScript, /--file "\$compose_override_file"/);
+  assert.match(deployScript, /--file "\$compose_egress_file"/);
+  assert.match(deployScript, /pinned_node_image="node:24-alpine@sha256:[a-f0-9]{64}"/);
+  assert.match(deployScript, /pinned_node_amd64_digest="[a-f0-9]{64}"/);
+  assert.match(deployScript, /--build-context "\$pinned_node_image=docker-image:\/\/\$node_build_context"/);
+  assert.match(deployScript, /run_compose up --detach --remove-orphans --no-build/);
   assert.match(compose, /source: "\$\{WM_AUTH_FILE:-\.\/shared\/auth\/worldmonitor\.htpasswd\}"/);
+});
+
+test('base images are pinned in the build definitions and cannot be weakened by Compose args', async () => {
+  const compose = await readFile(composePath, 'utf8');
+  const envExample = await readFile(envExamplePath, 'utf8');
+  const appDockerfile = await readFile(appDockerfilePath, 'utf8');
+
+  assert.match(appDockerfile, /^FROM node:24-alpine@sha256:[a-f0-9]{64} AS builder$/m);
+  assert.doesNotMatch(appDockerfile, /^FROM \$\{/m);
+  assert.doesNotMatch(compose, /NODE_IMAGE:/);
+  assert.doesNotMatch(compose, /TUNNEL_BASE_IMAGE:/);
+  assert.match(compose, /image: "redis:7-alpine@sha256:[a-f0-9]{64}"/);
+  assert.match(envExample, /^WM_NODE_BUILD_CONTEXT=$/m);
+  assert.doesNotMatch(envExample, /^WM_NODE_IMAGE=/m);
+  assert.doesNotMatch(envExample, /^WM_TUNNEL_BASE_IMAGE=/m);
 });
 
 test('every long-running production service automatically restarts', async () => {
@@ -93,6 +142,7 @@ test('environment validator rejects public placeholders and accepts strong relea
   const authPath = join(directory, 'auth');
   const envLinkPath = join(directory, 'env-link');
   const authLinkPath = join(directory, 'auth-link');
+  const egressPath = join(directory, 'egress.json');
   const validator = fileURLToPath(validatorPath);
   const placeholders = [
     'REDIS_PASSWORD=replace-with-openssl-rand-hex-32',
@@ -107,6 +157,8 @@ test('environment validator rejects public placeholders and accepts strong relea
   await writeFile(authPath, 'investor:$apr1$12345678$abcdefghijklmnopqrstuv\n', { mode: 0o600 });
   await chmod(envPath, 0o600);
   await chmod(authPath, 0o600);
+  await writeFile(egressPath, '{"inbounds":[],"outbounds":[]}\n', { mode: 0o600 });
+  await chmod(egressPath, 0o600);
   await symlink(envPath, envLinkPath);
   await symlink(authPath, authLinkPath);
 
@@ -124,6 +176,29 @@ test('environment validator rejects public placeholders and accepts strong relea
     env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
   });
   assert.equal(accepted.status, 0, accepted.stderr);
+
+  const acceptedWithEgress = spawnSync(validator, [envLinkPath, authLinkPath, egressPath], {
+    encoding: 'utf8',
+    env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
+  });
+  assert.equal(acceptedWithEgress.status, 0, acceptedWithEgress.stderr);
+
+  await chmod(egressPath, 0o644);
+  const permissiveEgress = spawnSync(validator, [envLinkPath, authLinkPath, egressPath], {
+    encoding: 'utf8',
+    env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
+  });
+  assert.notEqual(permissiveEgress.status, 0);
+  assert.match(permissiveEgress.stderr, /must have mode 600 or 400/);
+
+  await writeFile(egressPath, '{"inbounds":[]}\n', { mode: 0o600 });
+  await chmod(egressPath, 0o600);
+  const incompleteEgress = spawnSync(validator, [envLinkPath, authLinkPath, egressPath], {
+    encoding: 'utf8',
+    env: { ...process.env, WM_IMAGE_TAG: 'abcdef123456' },
+  });
+  assert.notEqual(incompleteEgress.status, 0);
+  assert.match(incompleteEgress.stderr, /must contain inbounds and outbounds arrays/);
 
   await writeFile(envPath, strong.replace('WM_AUTH_COOKIE_SECRET=' + 'a'.repeat(64), 'WM_AUTH_COOKIE_SECRET=' + 'z'.repeat(64)), {
     mode: 0o600,

@@ -3,6 +3,7 @@ set -eu
 
 env_file="${1:-.env.production}"
 auth_file="${2:-shared/auth/worldmonitor.htpasswd}"
+egress_config="${3:-}"
 image_tag="${WM_IMAGE_TAG:-}"
 
 if [ ! -f "$env_file" ]; then
@@ -52,6 +53,23 @@ fi
 if ! printf '%s\n' "$image_tag" | grep -Eq '^[0-9a-f]{7,40}$'; then
   printf 'ERROR: WM_IMAGE_TAG must be an immutable 7-40 character lowercase Git SHA\n' >&2
   exit 65
+fi
+
+if [ -n "$egress_config" ]; then
+  if [ ! -s "$egress_config" ]; then
+    printf 'ERROR: missing or empty egress proxy config: %s\n' "$egress_config" >&2
+    exit 66
+  fi
+  egress_mode="$(stat -Lc '%a' "$egress_config" 2>/dev/null || stat -Lf '%Lp' "$egress_config")"
+  case "$egress_mode" in
+    600|400) ;;
+    *) printf 'ERROR: %s must have mode 600 or 400 (found %s)\n' "$egress_config" "$egress_mode" >&2; exit 77 ;;
+  esac
+  if ! grep -Eq '"inbounds"[[:space:]]*:' "$egress_config" || \
+     ! grep -Eq '"outbounds"[[:space:]]*:' "$egress_config"; then
+    printf 'ERROR: egress proxy config must contain inbounds and outbounds arrays\n' >&2
+    exit 65
+  fi
 fi
 
 printf 'Environment and login files passed structural validation.\n'

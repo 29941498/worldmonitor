@@ -59,6 +59,40 @@ Install `nginx/wm.lemonbus.cn.conf` on the HTTPS gateway only after verifying
 the certificate/key pair and private upstream reachability. Always run
 `nginx -t` before reloading Nginx.
 
+## Independent outbound proxy
+
+`docker-compose.egress.yml` adds a World Monitor-owned outbound proxy on the
+private Compose network. It publishes no host port. The application, AIS relay,
+and seeders use it for external HTTP(S) requests while `NO_PROXY` keeps Redis,
+the relay, the auth gateway, and other internal traffic local.
+
+The proxy image and JSON configuration are host-provisioned inputs. Keep the
+configuration outside release directories, mode 600, and never commit it. The
+deployment validator checks that the file is private and contains both Xray
+inbound and outbound sections. Enable both production overrides for the stable
+domain deployment:
+
+```sh
+export WM_COMPOSE_OVERRIDE_FILE="$PWD/docker-compose.domain.yml"
+export WM_COMPOSE_EGRESS_FILE="$PWD/docker-compose.egress.yml"
+./scripts/deploy.sh
+```
+
+The proxy restores sources that are otherwise unreachable from the host, but it
+does not replace provider API keys. A source can also remain unavailable when
+its upstream blocks the selected proxy route; judge readiness from the health
+payload and seeder evidence after each release.
+
+## Offline registry build fallback
+
+Every Dockerfile pins its base image directly to an immutable digest. If the
+host cannot reach Docker Hub but already has the audited linux/amd64 Node image,
+set `WM_NODE_BUILD_CONTEXT` to that local image reference including its platform
+manifest digest. `deploy.sh` accepts only the exact digest corresponding to the
+pinned Node image, substitutes it through a BuildKit named context, and still
+builds the checked-in Dockerfiles unchanged. A mutable tag or a different image
+digest fails before the build starts.
+
 ## Bootstrap
 
 From this directory on the server:
@@ -66,8 +100,9 @@ From this directory on the server:
 ```sh
 cp .env.production.example .env.production
 chmod 600 .env.production
-mkdir -p shared/auth runtime
-chmod 700 shared shared/auth runtime
+mkdir -p shared/auth shared/egress runtime
+chmod 700 shared shared/auth shared/egress runtime
+chmod 600 shared/egress/xray-config.json
 ```
 
 Generate the five required random values in `.env.production`. The validator
@@ -104,6 +139,7 @@ docker compose --env-file .env.production -f docker-compose.production.yml ps
 curl --fail http://127.0.0.1:18100/api/sidecar-health
 curl --fail 'http://127.0.0.1:18100/api/health?compact=1'
 docker compose --env-file .env.production -f docker-compose.production.yml logs --tail=100 seeders
+docker compose --env-file .env.production -f docker-compose.production.yml -f docker-compose.egress.yml exec -T seeders node -e "fetch('https://api.coingecko.com/api/v3/ping').then(r => { if (!r.ok) process.exit(1); console.log(r.status); })"
 docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}'
 ```
 
@@ -124,8 +160,10 @@ Keep `/home/qnyx/worldmonitor-current` and `/home/qnyx/worldmonitor-previous` as
 symlinks. Store mutable auth/runtime state under
 `/home/qnyx/worldmonitor-shared` and bind or symlink it into each release.
 
-Use the same `WM_COMPOSE_OVERRIDE_FILE` value for every stable-domain release
-and rollback. Omitting it intentionally returns to the base Quick Tunnel mode.
+Use the same `WM_COMPOSE_OVERRIDE_FILE` and `WM_COMPOSE_EGRESS_FILE` values for
+every stable-domain release and rollback. Omitting the domain override
+intentionally returns to the base Quick Tunnel mode; omitting the egress
+override disables the independent outbound route.
 
 To roll back, validate that `worldmonitor-previous` resolves to an existing
 release, stop the current project, point `worldmonitor-current` to the previous

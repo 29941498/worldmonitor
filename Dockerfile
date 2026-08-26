@@ -7,10 +7,8 @@
 #   final         — nginx (static) + node (API) under supervisord
 # =============================================================================
 
-ARG NODE_IMAGE=node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43
-
 # ── Stage 1: Builder ─────────────────────────────────────────────────────────
-FROM ${NODE_IMAGE} AS builder
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS builder
 
 ARG VITE_SELF_HOSTED_LOGIN_GATEWAY=false
 ENV VITE_SELF_HOSTED_LOGIN_GATEWAY=${VITE_SELF_HOSTED_LOGIN_GATEWAY}
@@ -53,7 +51,7 @@ RUN node docker/build-handlers.mjs
 RUN test -s dist/pro/index.html && test -s dist/pro/welcome.html
 
 # ── Stage 2: Runtime dependencies ───────────────────────────────────────────
-FROM ${NODE_IMAGE} AS runtime-deps
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS runtime-deps
 
 WORKDIR /app
 
@@ -67,7 +65,7 @@ COPY docker/runtime-package-lock.json ./package-lock.json
 RUN npm ci --omit=dev --omit=optional --ignore-scripts
 
 # ── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM ${NODE_IMAGE} AS final
+FROM node:24-alpine@sha256:d32cdf619f63fe0471182d08996dd516c6275bb5fd31ae06e55a570bd9e1ad43 AS final
 
 # nginx + supervisord
 RUN apk add --no-cache nginx supervisor gettext && \
